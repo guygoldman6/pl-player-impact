@@ -1,0 +1,19 @@
+# Premier League player impact — project configuration
+league: EPL                       # understat league id
+seasons: [2023, 2024, 2025]       # understat season keys (2023 = 2023/24)
+footballdata_codes:               # football-data.co.uk season codes for E0.csv
+  2023: "2324"
+  2024: "2425"
+  2025: "2526"
+
+# Modeling
+min_minutes: 900        # players below this are pooled into the replacement bucket
+per90_scale: 90.0
+ridge_lambdas: [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
+cv_folds: 5             # grouped by match
+bootstrap_iters: 500
+
+# Paths (relative to repo root)
+raw_dir: data/raw
+processed_dir: data/processed
+outputs_dir: outputs
