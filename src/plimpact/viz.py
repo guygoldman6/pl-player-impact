@@ -144,7 +144,7 @@ def make_outputs(cfg: Config | None = None) -> None:
     ratings = pd.read_parquet(cfg.processed_dir / "ratings.parquet")
     cv = pd.read_parquet(cfg.processed_dir / "cv_curves.parquet")
 
-    cols = ["player", "latest_team", "total_minutes",
+    cols = ["player", "latest_team", "position", "total_minutes",
             "rapm_xg", "rapm_xg_lo", "rapm_xg_hi",
             "rapm_goals", "rapm_goals_lo", "rapm_goals_hi",
             "naive_gd90", "naive_xgd90"]

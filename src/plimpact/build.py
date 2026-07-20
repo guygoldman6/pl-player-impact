@@ -93,13 +93,39 @@ def build_all(cfg: Config | None = None) -> dict[str, pd.DataFrame]:
     return tables
 
 
+def _position_group(pos: str) -> str | None:
+    """Map an understat position string to GK/DEF/MID/FWD.
+
+    'Sub' rows carry no positional information and are excluded.
+    """
+    if pos == "Sub":
+        return None
+    if pos == "GK":
+        return "GK"
+    if pos in {"DC", "DR", "DL"}:
+        return "DEF"
+    if pos.startswith("FW") or pos in {"AML", "AMR"}:
+        return "FWD"
+    return "MID"
+
+
 def _player_table(appearances: pd.DataFrame) -> pd.DataFrame:
     latest = appearances.sort_values("date").groupby("player_id").last()
     totals = appearances.groupby("player_id")["minutes"].sum()
+
+    pos = appearances.assign(group=appearances["position"].map(_position_group))
+    pos = pos.dropna(subset=["group"])
+    primary = (
+        pos.groupby(["player_id", "group"])["minutes"].sum()
+        .reset_index()
+        .sort_values("minutes")
+        .groupby("player_id")["group"].last()
+    )
     return pd.DataFrame(
         {
             "player": latest["player"],
             "latest_team": latest["team"],
+            "position": primary.reindex(totals.index).fillna("MID"),
             "total_minutes": totals,
         }
     ).reset_index()
