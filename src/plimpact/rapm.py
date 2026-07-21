@@ -28,6 +28,11 @@ log = logging.getLogger(__name__)
 
 REPLACEMENT = "__replacement__"
 MAN_DIFF = "__man_diff__"
+# game-state controls (home perspective; reference = level score, 0-30 min).
+# ridge penalizes these slightly along with everything else — a documented
+# approximation; their fitted values double as sanity checks in model_meta
+CONTROLS = ["__lead1__", "__lead2__", "__trail1__", "__trail2__", "__mid__", "__late__"]
+NON_PLAYER = [REPLACEMENT, MAN_DIFF, *CONTROLS]
 
 
 @dataclass
@@ -50,24 +55,40 @@ def build_design(cfg: Config, appearances: pd.DataFrame, stints: pd.DataFrame) -
     col_of = {p: i for i, p in enumerate(players)}
     rep_col = len(players)
     man_col = len(players) + 1
+    ctrl_base = len(players) + 2  # CONTROLS occupy the columns after MAN_DIFF
 
     rows, cols, vals = [], [], []
+
+    def put(i: int, j: int, v: float) -> None:
+        rows.append(i)
+        cols.append(j)
+        vals.append(v)
+
     for i, stint in enumerate(stints.itertuples()):
         for side_players, sign in ((stint.h_players, 1.0), (stint.a_players, -1.0)):
             for pid in side_players:
-                j = col_of.get(pid, rep_col)
-                rows.append(i)
-                cols.append(j)
-                vals.append(sign)
+                put(i, col_of.get(pid, rep_col), sign)
         man = len(stint.h_players) - len(stint.a_players)
         if man:
-            rows.append(i)
-            cols.append(man_col)
-            vals.append(float(man))
+            put(i, man_col, float(man))
+
+        sd = stint.score_h - stint.score_a
+        if sd == 1:
+            put(i, ctrl_base + 0, 1.0)
+        elif sd >= 2:
+            put(i, ctrl_base + 1, 1.0)
+        elif sd == -1:
+            put(i, ctrl_base + 2, 1.0)
+        elif sd <= -2:
+            put(i, ctrl_base + 3, 1.0)
+        if 30 <= stint.start < 60:
+            put(i, ctrl_base + 4, 1.0)
+        elif stint.start >= 60:
+            put(i, ctrl_base + 5, 1.0)
 
     n = len(stints)
     X = sparse.csr_matrix(
-        (vals, (rows, cols)), shape=(n, len(players) + 2)
+        (vals, (rows, cols)), shape=(n, len(players) + 2 + len(CONTROLS))
     )
     # duplicate (row, col) pairs sum automatically, which is what we want for
     # multiple replacement-level players on the same pitch
@@ -78,10 +99,10 @@ def build_design(cfg: Config, appearances: pd.DataFrame, stints: pd.DataFrame) -
     return StintDesign(
         X=X,
         y_goals=(stints["h_goals"] - stints["a_goals"]).to_numpy(dtype=float) * scale,
-        y_xg=(stints["h_xg"] - stints["a_xg"]).to_numpy(dtype=float) * scale,
+        y_xg=(stints["h_npxg"] - stints["a_npxg"]).to_numpy(dtype=float) * scale,
         weights=duration,
         match_ids=stints["match_id"].to_numpy(),
-        columns=[*players, REPLACEMENT, MAN_DIFF],
+        columns=[*players, REPLACEMENT, MAN_DIFF, *CONTROLS],
     )
 
 
@@ -114,8 +135,9 @@ def fit_rapm(design: StintDesign, y: np.ndarray, lam: float) -> tuple[pd.Series,
         "home_advantage": float(model.intercept_),
         "man_diff_coef": float(coefs[MAN_DIFF]),
         "replacement_coef": float(coefs[REPLACEMENT]),
+        "controls": {c.strip("_"): float(coefs[c]) for c in CONTROLS},
     }
-    return coefs.drop([MAN_DIFF]), meta
+    return coefs.drop([MAN_DIFF, *CONTROLS]), meta
 
 
 def split_half_ratings(
@@ -132,7 +154,7 @@ def split_half_ratings(
         model = Ridge(alpha=lam, fit_intercept=True)
         model.fit(design.X[mask], y[mask], sample_weight=design.weights[mask])
         out[name] = pd.Series(model.coef_, index=design.columns)
-    return pd.DataFrame(out).drop([MAN_DIFF, REPLACEMENT])
+    return pd.DataFrame(out).drop(NON_PLAYER)
 
 
 def bootstrap_ci(
@@ -154,4 +176,4 @@ def bootstrap_ci(
     lo, hi = np.percentile(samples, [5, 95], axis=0)
     return pd.DataFrame(
         {"ci_lo": lo, "ci_hi": hi, "se": samples.std(axis=0)}, index=design.columns
-    ).drop([MAN_DIFF])
+    ).drop([MAN_DIFF, *CONTROLS])

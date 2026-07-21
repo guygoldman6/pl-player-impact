@@ -16,6 +16,7 @@ import pandas as pd
 
 from . import rapm
 from .config import Config, load_config
+from .finishing import finishing_table
 from .naive import naive_plus_minus
 from .validate import load_tables
 
@@ -73,6 +74,17 @@ def run_all(cfg: Config | None = None) -> pd.DataFrame:
         )
     )
     ratings = ratings.join(naive_player)
+
+    # individual finishing overlay -> headline impact90
+    log.info("finishing overlay")
+    fin = finishing_table(cfg, t["shots"], appearances).set_index("player_id")
+    meta["finishing_tau2"] = fin.attrs["tau2"]
+    ratings["shots"] = fin["shots"]
+    ratings["finishing_per90"] = fin["finishing_per90"]
+    ratings["finishing_per90"] = ratings["finishing_per90"].fillna(0.0)
+    ratings["impact90"] = ratings["rapm_xg"] + ratings["finishing_per90"]
+    ratings["impact90_lo"] = ratings["rapm_xg_lo"] + ratings["finishing_per90"]
+    ratings["impact90_hi"] = ratings["rapm_xg_hi"] + ratings["finishing_per90"]
 
     ratings = ratings.dropna(subset=["rapm_goals"]).reset_index()
     ratings.to_parquet(cfg.processed_dir / "ratings.parquet", index=False)

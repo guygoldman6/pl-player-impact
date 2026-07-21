@@ -12,6 +12,7 @@ per90_scale: 90.0
 ridge_lambdas: [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800, 25600]
 cv_folds: 5             # grouped by match
 bootstrap_iters: 500
+holdout_cutoff: "2026-03-01"   # test set: matches on/after this date (~last 10 gameweeks)
 
 # Paths (relative to repo root)
 raw_dir: data/raw

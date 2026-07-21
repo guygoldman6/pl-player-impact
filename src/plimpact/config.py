@@ -21,6 +21,7 @@ class Config:
     ridge_lambdas: tuple[float, ...]
     cv_folds: int
     bootstrap_iters: int
+    holdout_cutoff: str
     raw_dir: Path
     processed_dir: Path
     outputs_dir: Path
@@ -40,6 +41,7 @@ def load_config(path: Path | None = None) -> Config:
         ridge_lambdas=tuple(raw["ridge_lambdas"]),
         cv_folds=raw["cv_folds"],
         bootstrap_iters=raw["bootstrap_iters"],
+        holdout_cutoff=raw["holdout_cutoff"],
         raw_dir=REPO_ROOT / raw["raw_dir"],
         processed_dir=REPO_ROOT / raw["processed_dir"],
         outputs_dir=REPO_ROOT / raw["outputs_dir"],

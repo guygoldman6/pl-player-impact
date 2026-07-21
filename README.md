@@ -2,9 +2,12 @@
 
 **Who actually moves the needle when they're on the pitch?** This project ranks
 Premier League players (2023/24 – 2025/26) by their on-pitch impact, built up in
-three stages: the intuitive **on/off goal plus-minus**, its failure modes, and the
-fix — **regularized adjusted plus-minus (RAPM)** on match *stints*, with an
-**expected-goals response** for a cleaner signal.
+stages: the intuitive **on/off goal plus-minus**, its failure modes, the fix —
+**regularized adjusted plus-minus (RAPM)** on match *stints* with a non-penalty
+xG response and game-state controls — and an **empirical-Bayes finishing
+overlay** so clinical finishers are credited for their own conversion. The
+headline metric is `impact90 = npxG-RAPM + finishing per 90`, validated on a
+held-out set of future matches.
 
 ![Top 20 players by xG-RAPM](outputs/top20_xg_rapm.png)
 
@@ -29,30 +32,48 @@ regularization to tame the collinearity.
 ## Method
 
 **Stints.** Each match is segmented into maximal intervals with an unchanged set
-of players — boundaries at substitutions and red cards. Every stint records both
-rosters, its duration, and the goals and xG created by each side inside it.
+of players *and an unchanged score* — boundaries at substitutions, red cards, and
+goals (10,315 stints across 1,140 matches). Every stint records both rosters, its
+duration, the score when it began, and the goals/xG created by each side inside it.
 
 **The regression.** One row per stint (~7,600 of them):
 
 - **Response:** stint goal differential (home − away), scaled to per-90; rows
-  weighted by stint duration. The xG variant swaps in stint xG differential.
+  weighted by stint duration. The headline variant uses **non-penalty xG** — a
+  penalty is ~0.76 xG awarded to the whole lineup for an individual event, so
+  spot kicks are excluded from the collective model and handled by the finishing
+  overlay.
 - **Player columns:** +1 if on the pitch for the home side, −1 for the away side.
   Players under 900 career minutes pool into one *replacement* column, so
   coefficients read as **impact per 90 over a replacement-level player**.
-- **Controls:** an unpenalized intercept (home advantage — the model recovers the
-  league's true ≈ +0.3–0.4 goals/90 from data) and a man-count differential
-  (red cards).
+- **Controls:** an unpenalized intercept (home advantage: recovered at
+  +0.28 xG/90), a man-count differential (an extra man is worth ≈ 1.0 xG/90),
+  score-state dummies, and match-phase dummies. The fitted game-state terms
+  recover known dynamics — teams leading by one generate ≈ 0.13 xG/90 less
+  (sitting back), trailing teams ≈ 0.12 more (pushing).
 - **Ridge λ** chosen by cross-validation with folds **grouped by match**, so no
   match straddles the train/test split.
 - **Uncertainty** from a cluster bootstrap (resampling matches, 500 draws).
 
-**Why xG?** Goals are a noisy readout of match control; chance quality carries
-more signal per minute and strips out finishing/keeper luck. Empirically, with
-three full seasons the two responses end up close (split-half reliability ≈ 0.49
-Spearman-Brown for both; xG's bootstrap signal-to-noise is modestly better at
-1.36 vs 1.30) — the reliability test in
-[notebook 05](notebooks/05_validation_and_final_rankings.ipynb) reports the
-numbers rather than assuming the answer.
+**Why xG — and what about clinical finishers?** Goals are a noisy readout of
+match control; chance quality carries more signal per minute. But a pure-xG
+model rates a wasteful striker level with a clinical one, and switching the
+whole regression to goals doesn't fix that — a goal credits all 11 players, so
+finishing skill smears across the lineup. Finishing is an *individual* skill,
+so it gets an individual treatment: each player's own goals-minus-xG per shot,
+**shrunk with an empirical-Bayes prior** (τ ≈ 0.010 goals/shot, estimated from
+the data — finishing skill is real but small, and raw hot streaks are mostly
+luck). The shrunk edge times the player's shot volume gives `finishing_per90`,
+and the headline is `impact90 = npxG-RAPM + finishing_per90`. Face validity:
+the overlay's biggest losers are famously wasteful profiles (Darwin Núñez,
+Calvert-Lewin); its winners (Cunha, Foden) are known clinical finishers.
+
+**Out-of-sample check** ([notebook 05](notebooks/05_validation_and_final_rankings.ipynb)):
+trained on matches before March 2026 and predicting the final ~10 gameweeks from
+kickoff XIs alone, lineup ratings rank match npxG differentials better than a
+team-strength baseline (Spearman 0.33 vs 0.28) and beat home-advantage-only on
+error — but do not improve MSE over team strength; single matches are noisy and
+the writeup says so.
 
 ![What adjustment does](outputs/naive_vs_rapm.png)
 
@@ -64,6 +85,9 @@ numbers rather than assuming the answer.
   match an independent source (football-data.co.uk).
 - **Split-half reliability:** the model is fit on two disjoint halves of the
   match sample and the two rating vectors are correlated.
+- **Predictive holdout:** trained before March 2026, kickoff-XI predictions of
+  the final ~10 gameweeks are scored against team-strength and home-advantage
+  baselines (results reported honestly in notebook 05).
 - **Sanity recoveries:** home advantage and the value of a man advantage are
   estimated, not assumed — both land where the literature says they should.
 - **Unit tests** cover the stint builder's edge cases: same-minute double subs,
@@ -71,21 +95,21 @@ numbers rather than assuming the answer.
 
 ## Results
 
-Top 10 by xG-RAPM, 2023/24–2025/26 (impact per 90 over a replacement-level
-player, 90% bootstrap interval):
+Top 10 by `impact90` (npxG-RAPM + finishing per 90 over a replacement-level
+player), 2023/24–2025/26, with 90% bootstrap intervals:
 
-| # | Player | Team | Minutes | xG-RAPM /90 | 90% CI |
-|---|--------|------|--------:|------------:|--------|
-| 1 | Bruno Guimarães | Newcastle United | 9,133 | **+0.33** | +0.19 … +0.43 |
-| 2 | Kevin Schade | Brentford | 5,445 | **+0.28** | +0.16 … +0.41 |
-| 3 | Rodri | Manchester City | 4,564 | **+0.26** | +0.13 … +0.37 |
-| 4 | Jacob Murphy | Newcastle United | 5,314 | **+0.26** | +0.10 … +0.41 |
-| 5 | William Saliba | Arsenal | 9,139 | **+0.24** | +0.16 … +0.33 |
-| 6 | Trent Alexander-Arnold | Liverpool | 4,617 | **+0.24** | +0.13 … +0.38 |
-| 7 | Bukayo Saka | Arsenal | 7,024 | **+0.22** | +0.10 … +0.36 |
-| 8 | Evanilson | Bournemouth | 5,201 | **+0.21** | +0.04 … +0.33 |
-| 9 | Rúben Dias | Manchester City | 7,012 | **+0.21** | +0.08 … +0.33 |
-| 10 | Luis Díaz | Liverpool | 5,157 | **+0.20** | +0.06 … +0.32 |
+| # | Player | Team | Pos | Minutes | Impact /90 | 90% CI |
+|---|--------|------|-----|--------:|-----------:|--------|
+| 1 | Bruno Guimarães | Newcastle United | MID | 9,133 | **+0.34** | +0.20 … +0.44 |
+| 2 | Rodri | Manchester City | MID | 4,564 | **+0.24** | +0.13 … +0.36 |
+| 3 | Kevin Schade | Brentford | FWD | 5,445 | **+0.24** | +0.11 … +0.36 |
+| 4 | Jacob Murphy | Newcastle United | FWD | 5,314 | **+0.24** | +0.10 … +0.38 |
+| 5 | Trent Alexander-Arnold | Liverpool | DEF | 4,617 | **+0.22** | +0.11 … +0.35 |
+| 6 | William Saliba | Arsenal | DEF | 9,139 | **+0.21** | +0.13 … +0.29 |
+| 7 | Rúben Dias | Manchester City | DEF | 7,012 | **+0.21** | +0.10 … +0.33 |
+| 8 | Callum Wilson | West Ham | FWD | 2,537 | **+0.20** | +0.05 … +0.34 |
+| 9 | Kaoru Mitoma | Brighton | FWD | 5,854 | **+0.19** | +0.07 … +0.31 |
+| 10 | Beto | Everton | FWD | 4,008 | **+0.19** | +0.05 … +0.31 |
 
 The model finds the names an informed fan would expect (Rodri's famous on/off
 effect survives full adjustment; Saliba and Dias anchor the two best defenses)
@@ -143,7 +167,9 @@ src/plimpact/
 ├── stints.py     # match -> stint segmentation (the core data structure)
 ├── naive.py      # on/off plus-minus baseline
 ├── rapm.py       # sparse design matrix, ridge, grouped CV, bootstrap
-├── model.py      # orchestration: naive -> RAPM -> xG-RAPM -> ratings.parquet
+├── finishing.py  # empirical-Bayes finishing overlay
+├── predict.py    # out-of-sample holdout validation
+├── model.py      # orchestration: naive -> RAPM -> npxG-RAPM -> impact90
 ├── validate.py   # reconciliation gates
 └── viz.py        # README charts
 ```

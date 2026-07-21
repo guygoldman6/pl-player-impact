@@ -47,7 +47,7 @@ def _fig(width: float, height: float) -> tuple[plt.Figure, plt.Axes]:
     return fig, ax
 
 
-def fig_top20(ratings: pd.DataFrame, path, metric: str = "rapm_xg") -> None:
+def fig_top20(ratings: pd.DataFrame, path, metric: str = "impact90") -> None:
     """Top 20 players: dot with 90% bootstrap interval, sorted, direct-labeled."""
     top = ratings.nlargest(20, metric).sort_values(metric)
     fig, ax = _fig(9, 8)
@@ -62,8 +62,8 @@ def fig_top20(ratings: pd.DataFrame, path, metric: str = "rapm_xg") -> None:
     labels = [f'{r["player"]}  ·  {r["latest_team"]}' for _, r in top.iterrows()]
     ax.set_yticks(list(y), labels, fontsize=9, color=INK)
     ax.axvline(0, color=BASELINE, linewidth=1)
-    ax.set_xlabel("xG impact per 90 vs replacement (90% bootstrap interval)")
-    ax.set_title("Premier League player impact — top 20 by xG-RAPM", loc="left",
+    ax.set_xlabel("impact per 90 vs replacement: npxG-RAPM + finishing (90% bootstrap interval)")
+    ax.set_title("Premier League player impact — top 20", loc="left",
                  fontsize=12, fontweight="bold", pad=14)
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight", facecolor=SURFACE)
@@ -98,15 +98,15 @@ def fig_rating_vs_minutes(ratings: pd.DataFrame, path) -> None:
     """Shrinkage funnel: estimates tighten as minutes accumulate."""
     fig, ax = _fig(8, 6)
     ax.grid(axis="both", color=GRID, linewidth=0.8)
-    ax.scatter(ratings["total_minutes"], ratings["rapm_xg"], s=22, color=BLUE,
+    ax.scatter(ratings["total_minutes"], ratings["impact90"], s=22, color=BLUE,
                alpha=0.55, edgecolors=SURFACE, linewidths=0.5)
     ax.axhline(0, color=BASELINE, linewidth=1)
-    for _, r in ratings.nlargest(3, "rapm_xg").iterrows():
-        ax.annotate(r["player"], (r["total_minutes"], r["rapm_xg"]),
+    for _, r in ratings.nlargest(3, "impact90").iterrows():
+        ax.annotate(r["player"], (r["total_minutes"], r["impact90"]),
                     xytext=(6, 4), textcoords="offset points",
                     fontsize=8, color=INK_2)
     ax.set_xlabel("Minutes played (three seasons)")
-    ax.set_ylabel("xG-RAPM per 90")
+    ax.set_ylabel("Impact per 90 (npxG-RAPM + finishing)")
     ax.set_title("Impact rating vs playing time", loc="left",
                  fontsize=12, fontweight="bold", pad=14)
     fig.tight_layout()
@@ -145,10 +145,11 @@ def make_outputs(cfg: Config | None = None) -> None:
     cv = pd.read_parquet(cfg.processed_dir / "cv_curves.parquet")
 
     cols = ["player", "latest_team", "position", "total_minutes",
-            "rapm_xg", "rapm_xg_lo", "rapm_xg_hi",
+            "impact90", "impact90_lo", "impact90_hi",
+            "rapm_xg", "rapm_xg_lo", "rapm_xg_hi", "finishing_per90", "shots",
             "rapm_goals", "rapm_goals_lo", "rapm_goals_hi",
             "naive_gd90", "naive_xgd90"]
-    (ratings.sort_values("rapm_xg", ascending=False)[cols]
+    (ratings.sort_values("impact90", ascending=False)[cols]
             .round(4)
             .to_csv(cfg.outputs_dir / "rankings.csv", index=False))
 

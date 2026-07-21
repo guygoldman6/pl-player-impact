@@ -75,6 +75,8 @@ def build_all(cfg: Config | None = None) -> dict[str, pd.DataFrame]:
                         "a_players": sorted(st.a_players),
                         "h_goals": st.h_goals, "a_goals": st.a_goals,
                         "h_xg": st.h_xg, "a_xg": st.a_xg,
+                        "h_npxg": st.h_npxg, "a_npxg": st.a_npxg,
+                        "score_h": st.score_h, "score_a": st.score_a,
                     }
                 )
 
